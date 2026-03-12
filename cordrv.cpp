@@ -40,6 +40,7 @@ bool CorDrv::Initialize() {
 }
 
 void CorDrv::Close() {
+    RestoreDriver();
     if (IsValid()) { CloseHandle(m_Device); m_Device = INVALID_HANDLE_VALUE; }
     m_PoolBlockCount = 0; m_SystemDTB = 0;
     memset(m_PoolBlocks, 0, sizeof(m_PoolBlocks));
@@ -493,6 +494,10 @@ bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
             ReadPhysicalMemory(entryPhys + LdrEntry::InLoadOrderBlink, &entryBlink, sizeof(entryBlink));
             if (!entryFlink || !entryBlink) return false;
 
+            m_HiddenEntryVA = currentEntryVA;
+            m_HiddenEntryFlink = entryFlink;
+            m_HiddenEntryBlink = entryBlink;
+
             // prev->Flink = entry->Flink
             uint64_t prevPhys = TranslateVirtualAddress(m_SystemDTB, entryBlink);
             if (!prevPhys) return false;
@@ -513,4 +518,27 @@ bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
         currentEntryVA = nextFlink;
     }
     return false;
+}
+
+bool CorDrv::RestoreDriver() {
+    if (!m_SystemDTB || !m_HiddenEntryVA || !m_HiddenEntryFlink || !m_HiddenEntryBlink)
+        return false;
+
+    // Restore prev->Flink
+    uint64_t prevPhys = TranslateVirtualAddress(m_SystemDTB, m_HiddenEntryBlink);
+    if (prevPhys) {
+        WritePhysicalMemory(prevPhys + LdrEntry::InLoadOrderFlink, &m_HiddenEntryVA, sizeof(m_HiddenEntryVA));
+    }
+
+    // Restore next->Blink
+    uint64_t nextPhys = TranslateVirtualAddress(m_SystemDTB, m_HiddenEntryFlink);
+    if (nextPhys) {
+        WritePhysicalMemory(nextPhys + LdrEntry::InLoadOrderBlink, &m_HiddenEntryVA, sizeof(m_HiddenEntryVA));
+    }
+
+    m_HiddenEntryVA = 0;
+    m_HiddenEntryFlink = 0;
+    m_HiddenEntryBlink = 0;
+
+    return true;
 }

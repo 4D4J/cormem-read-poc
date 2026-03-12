@@ -218,6 +218,7 @@ public:
     static uint64_t GetSystemEprocessVA();
 
     bool HideDriver(const wchar_t* DriverBaseName);
+    bool RestoreDriver();
 
     bool ReadProcessMemory(uint64_t DTB, uint64_t VirtualAddress, void* Buffer, size_t Size);
     bool WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const void* Buffer, size_t Size);
@@ -248,4 +249,8 @@ private:
     uint32_t m_PoolBlockCount = 0;
     PoolBlock m_PoolBlocks[CORMEM_MAX_POOL_BLOCKS] = {};
     uint64_t m_SystemDTB = 0;
+    // HideDriver state — used by RestoreDriver
+    uint64_t m_HiddenEntryVA    = 0; // VA of CORMEM LDR_DATA_TABLE_ENTRY in kernel
+    uint64_t m_HiddenEntryFlink = 0; // original Flink saved before unlinking
+    uint64_t m_HiddenEntryBlink = 0; // original Blink saved before unlinking
 };
