@@ -13,12 +13,13 @@ static void HexDump(const uint8_t* Data, size_t Size, uint64_t BaseAddr = 0) {
 
 static void PrintUsage(const char* argv0) {
     printf("Usage:\n");
-    printf("  %s <pid> <address> [size]\n\n", argv0);
+    printf("  %s <pid> <address> [size] [--hide]\n\n", argv0);
     printf("  pid     : process ID to read from (decimal)\n");
     printf("  address : virtual address to read (hex, e.g. 0x7FF700000000)\n");
-    printf("  size    : bytes to dump (optional, default=256)\n\n");
+    printf("  size    : bytes to dump (optional, default=256)\n");
+    printf("  --hide  : unlink CORMEM from PsLoadedModuleList after init (DKOM)\n\n");
     printf("Example:\n");
-    printf("  %s 1234 0x7FF76B400000 512\n", argv0);
+    printf("  %s 1234 0x7FF76B400000 512 --hide\n", argv0);
 }
 
 int main(int argc, char* argv[]) {
@@ -29,7 +30,13 @@ int main(int argc, char* argv[]) {
 
     DWORD    targetPid = (DWORD)strtoul(argv[1], nullptr, 10);
     uint64_t targetVA  = strtoull(argv[2], nullptr, 16);
-    size_t   dumpSize  = (argc >= 4) ? (size_t)strtoull(argv[3], nullptr, 10) : 256;
+    size_t   dumpSize  = 256;
+    bool     doHide    = false;
+
+    for (int i = 3; i < argc; i++) {
+        if (_stricmp(argv[i], "--hide") == 0) doHide = true;
+        else dumpSize = (size_t)strtoull(argv[i], nullptr, 10);
+    }
 
     if (targetPid == 0) { printf("[-] Invalid PID.\n"); return 1; }
     if (targetVA  == 0) { printf("[-] Invalid address.\n"); return 1; }
@@ -50,6 +57,15 @@ int main(int argc, char* argv[]) {
     uint64_t sysDTB = drv.FindSystemDTB();
     if (!sysDTB) { printf("[-] Failed to find system DTB.\n"); return 1; }
     printf("[+] System DTB: 0x%llX\n\n", (unsigned long long)sysDTB);
+
+    // --- Optionally hide CORMEM from PsLoadedModuleList ---
+    if (doHide) {
+        printf("[*] Hiding CORMEM from PsLoadedModuleList...\n");
+        if (drv.HideDriver(L"CORMEM.sys"))
+            printf("[+] Driver hidden.\n\n");
+        else
+            printf("[-] HideDriver failed (driver may already be unlinked).\n\n");
+    }
 
     // --- Find target process DTB ---
     printf("[*] Searching EPROCESS list for PID %u...\n", targetPid);

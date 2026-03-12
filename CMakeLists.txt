@@ -14,6 +14,7 @@ add_executable(cordrv_exploit
 # Windows libs nécessaires
 target_link_libraries(cordrv_exploit PRIVATE
     ntdll
+    psapi
 )
 
 # Warnings utiles

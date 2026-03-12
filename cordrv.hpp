@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Windows.h>
 #include <cstdint>
@@ -52,6 +52,14 @@ namespace EProcess {
     constexpr uint64_t UniqueProcessId = 0x440;
     constexpr uint64_t ActiveProcessLinks = 0x448;
     constexpr uint64_t ImageFileName = 0x5A8;
+}
+
+// Offsets within kernel LDR_DATA_TABLE_ENTRY (x64, Windows 10/11)
+namespace LdrEntry {
+    constexpr uint64_t InLoadOrderFlink  = 0x000; // LIST_ENTRY.Flink
+    constexpr uint64_t InLoadOrderBlink  = 0x008; // LIST_ENTRY.Blink
+    constexpr uint64_t BaseDllNameLength = 0x058; // UNICODE_STRING.Length (USHORT)
+    constexpr uint64_t BaseDllNameBuffer = 0x060; // UNICODE_STRING.Buffer (PWSTR)
 }
 
 #define SystemExtendedHandleInformation 0x40
@@ -209,6 +217,8 @@ public:
 
     static uint64_t GetSystemEprocessVA();
 
+    bool HideDriver(const wchar_t* DriverBaseName);
+
     bool ReadProcessMemory(uint64_t DTB, uint64_t VirtualAddress, void* Buffer, size_t Size);
     bool WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const void* Buffer, size_t Size);
 
@@ -231,6 +241,8 @@ private:
     bool MapPoolBlock(uint32_t Index);
     static bool TryFindDTBFromLowStub(uint8_t* LowStub1M, uint64_t& OutDTB, uint64_t& OutKernelEntry);
     bool ValidatePML4Page(uint64_t DTB, uint64_t MaxPhysAddr);
+    static uint64_t GetNtoskrnlBase(char* OutName = nullptr, size_t NameSize = 0);
+    static uint64_t ResolvePsLoadedModuleList(uint64_t NtBase, const char* NtName);
 
     HANDLE m_Device = INVALID_HANDLE_VALUE;
     uint32_t m_PoolBlockCount = 0;
