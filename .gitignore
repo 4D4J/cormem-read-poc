@@ -1,0 +1,24 @@
+# Build output
+build/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# Binaries
+*.exe
+*.pdb
+*.ilk
+*.obj
+
+# Driver (ne pas commit le .sys)
+*.sys
