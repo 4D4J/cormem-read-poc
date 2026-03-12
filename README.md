@@ -2,6 +2,8 @@
 
 Usermode tool that reads and writes arbitrary process memory through the Corsair CORMEM kernel driver, bypassing Win32 API monitoring entirely.
 
+![poc](poc.png)
+
 Memory is accessed via physical address translation (page table walk) rather than `ReadProcessMemory`, making it transparent to most userland security software.
 
 ## Requirements
@@ -91,3 +93,4 @@ The `4D 5A` at offset 0 confirms the MZ header was read successfully from physic
 - Pages that have been swapped out to disk cannot be read (TranslateVirtualAddress will return 0).
 - Some processes spawn multiple instances — always target the one with the highest working set.
 - HVCI / Secure Boot may block CORMEM.SYS on Windows 11 if the driver is on Microsoft's blocklist.
+
