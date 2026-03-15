@@ -352,15 +352,28 @@ uint64_t CorDrv::FindProcessDTB(DWORD Pid) {
     return 0;
 }
 
+#include "tlb_cache.hpp"
+
 bool CorDrv::ReadProcessMemory(uint64_t DTB, uint64_t VirtualAddress, void* Buffer, size_t Size) {
     uint8_t* dst = static_cast<uint8_t*>(Buffer);
     size_t remaining = Size;
     uint64_t va = VirtualAddress;
     while (remaining > 0) {
-        uint64_t phys = TranslateVirtualAddress(DTB, va);
-        if (phys == 0) return false;
+        uint64_t pageVa = va & ~0xFFFULL;
+        bool found = false;
+        uint64_t physPage = g_Cache.Lookup(pageVa, found);
+        
+        if (!found) {
+            uint64_t phys = TranslateVirtualAddress(DTB, va);
+            physPage = phys ? (phys & ~0xFFFULL) : 0;
+            g_Cache.Insert(pageVa, physPage);
+        }
+        
+        if (physPage == 0) return false;
+        
+        uint64_t targetPhys = physPage + (va & 0xFFF);
         size_t chunk = min(remaining, (size_t)(PAGE_4KB - (va & 0xFFF)));
-        if (!ReadPhysicalMemory(phys, dst, chunk)) return false;
+        if (!ReadPhysicalMemory(targetPhys, dst, chunk)) return false;
         dst += chunk; va += chunk; remaining -= chunk;
     }
     return true;
@@ -371,10 +384,21 @@ bool CorDrv::WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const voi
     size_t remaining = Size;
     uint64_t va = VirtualAddress;
     while (remaining > 0) {
-        uint64_t phys = TranslateVirtualAddress(DTB, va);
-        if (phys == 0) return false;
+        uint64_t pageVa = va & ~0xFFFULL;
+        bool found = false;
+        uint64_t physPage = g_Cache.Lookup(pageVa, found);
+        
+        if (!found) {
+            uint64_t phys = TranslateVirtualAddress(DTB, va);
+            physPage = phys ? (phys & ~0xFFFULL) : 0;
+            g_Cache.Insert(pageVa, physPage);
+        }
+        
+        if (physPage == 0) return false;
+        
+        uint64_t targetPhys = physPage + (va & 0xFFF);
         size_t chunk = min(remaining, (size_t)(PAGE_4KB - (va & 0xFFF)));
-        if (!WritePhysicalMemory(phys, src, chunk)) return false;
+        if (!WritePhysicalMemory(targetPhys, src, chunk)) return false;
         src += chunk; va += chunk; remaining -= chunk;
     }
     return true;

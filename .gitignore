@@ -22,3 +22,10 @@ install_manifest.txt
 
 # Driver (ne pas commit le .sys)
 *.sys
+
+# Python
+__pycache__/
+*.pyc
+
+.dayz_reader.cpp
+.dayz_reader.hpp

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <TlHelp32.h>
+#include "dayz_reader.hpp"
 
 // ---- Process lookup ------------------------------------------------
 
@@ -145,10 +146,16 @@ int main(int argc, char* argv[]) {
         }
         printf("[+] PID   : %u\n", targetPid);
         printf("[+] Base  : 0x%llX\n\n", (unsigned long long)targetVA);
-    }
+    } // targetVA is populated by FindProcessByName if procName is used
+
 
     if (targetPid == 0) { printf("[-] Invalid PID.\n"); Pause(); return 1; }
-    if (targetVA  == 0) { printf("[-] Invalid address.\n"); Pause(); return 1; }
+    // En mode interactif classique, targetVA vient de la base address, 
+    // s'il est à 0 c'est souvent parce que le module principal n'a pas pu être lu. 
+    // On met un warning plutôt qu'un blocage dur car le jeu est 64bit.
+    if (targetVA  == 0) { 
+        printf("[-] Warning: Base address is 0x0. Make sure you are running as Admin.\n"); 
+    }
 
     printf("[*] Target PID     : %u\n",   targetPid);
     printf("[*] Target address : 0x%llX\n", (unsigned long long)targetVA);
@@ -188,6 +195,14 @@ int main(int argc, char* argv[]) {
     uint64_t phys = drv.TranslateVirtualAddress(procDTB, targetVA);
     if (!phys) { printf("[-] Page table walk failed for 0x%llX.\n", (unsigned long long)targetVA); Pause(); return 1; }
     printf("[+] VA 0x%llX -> PA 0x%llX\n\n", (unsigned long long)targetVA, (unsigned long long)phys);
+
+    // ---- Run DayZ Reader if process name match ----
+    if (strstr(procName, "DayZ") != nullptr) {
+        printf("[*] DayZ process detected matching '%s'!\n", procName);
+        RunDayZReader(drv, procDTB, targetVA);
+        Pause();
+        return 0; // Exit after doing DayZ specific logic
+    }
 
     // ---- Read & dump ----
     uint8_t* buf = new uint8_t[dumpSize]();

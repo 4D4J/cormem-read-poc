@@ -5,20 +5,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Sources
-add_executable(cordrv_exploit
-    main.cpp
+add_library(cordrv SHARED
+    cormem_dll.cpp
     cordrv.cpp
     cordrv.hpp
 )
 
 # Windows libs nécessaires
-target_link_libraries(cordrv_exploit PRIVATE
+target_link_libraries(cordrv PRIVATE
     ntdll
     psapi
 )
 
 # Warnings utiles
-target_compile_options(cordrv_exploit PRIVATE
+target_compile_options(cordrv PRIVATE
     /W3
     /WX-          # warnings non bloquants
     /permissive-  # mode conforme au standard
