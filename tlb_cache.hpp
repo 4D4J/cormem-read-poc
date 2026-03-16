@@ -13,9 +13,9 @@ struct CachedTranslation {
 
 class TLBCache {
 public:
-    uint64_t Lookup(uint64_t VirtualPage, bool& OutFound) {
+    uint64_t Lookup(uint64_t DTB, uint64_t VirtualPage, bool& OutFound) {
         std::lock_guard<std::mutex> lock(m_Mutex);
-        auto it = m_Cache.find(VirtualPage);
+        auto it = m_Cache.find({DTB, VirtualPage});
         if (it != m_Cache.end()) {
             uint32_t now = GetTickCount();
             // Cache valid for 2000ms (2 seconds)
@@ -31,10 +31,10 @@ public:
         return 0;
     }
 
-    void Insert(uint64_t VirtualPage, uint64_t PhysicalPage) {
+    void Insert(uint64_t DTB, uint64_t VirtualPage, uint64_t PhysicalPage) {
         std::lock_guard<std::mutex> lock(m_Mutex);
         CachedTranslation entry = { PhysicalPage, GetTickCount() };
-        m_Cache[VirtualPage] = entry;
+        m_Cache[{DTB, VirtualPage}] = entry;
     }
 
     void Clear() {
@@ -43,7 +43,12 @@ public:
     }
 
 private:
-    std::unordered_map<uint64_t, CachedTranslation> m_Cache;
+    struct std_hash {
+        size_t operator()(const std::pair<uint64_t, uint64_t>& p) const {
+            return std::hash<uint64_t>()(p.first) ^ (std::hash<uint64_t>()(p.second) << 1);
+        }
+    };
+    std::unordered_map<std::pair<uint64_t, uint64_t>, CachedTranslation, std_hash> m_Cache;
     std::mutex m_Mutex;
 };
 

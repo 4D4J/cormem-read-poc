@@ -152,6 +152,12 @@ struct CORMEM_UNMAP_PHYS_IN {
 };
 static_assert(sizeof(CORMEM_UNMAP_PHYS_IN) == 0x10);
 
+struct CORMEM_UNMAP_BUFFER_IN {
+    uint64_t MappedAddress;
+    uint64_t Size;
+};
+static_assert(sizeof(CORMEM_UNMAP_BUFFER_IN) == 0x10);
+
 #pragma pack(pop)
 
 struct PoolBlock {
@@ -185,7 +191,7 @@ public:
     bool AllocBuffer(uint64_t Size, uint32_t Alignment, uint32_t Flags, uint64_t* PhysAddress, uint64_t* UserAddress);
     bool FreeBuffer(uint64_t UserAddress);
     uint64_t MapBuffer(uint64_t Address, uint64_t Size, uint64_t Param);
-    bool UnmapBuffer(uint64_t MappedAddress);
+    bool UnmapBuffer(uint64_t MappedAddress, uint64_t Size);
     bool AllocPhysMemory(uint64_t P0, uint64_t P1, uint64_t P2, uint64_t P3, uint64_t* OutPhys, uint64_t* OutParam);
     bool FreePhysMemory(uint64_t PhysAddress);
     bool GetPoolBlockCount(uint32_t* Count);

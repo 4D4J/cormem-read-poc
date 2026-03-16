@@ -49,7 +49,6 @@ static bool FindProcessByName(const char* ProcName, DWORD* OutPid, uint64_t* Out
 }
 
 //  Hex dump 
-
 static void HexDump(const uint8_t* Data, size_t Size, uint64_t BaseAddr = 0) {
     for (size_t i = 0; i < Size; i++) {
         if (i % 16 == 0) printf("  %llX: ", (unsigned long long)(BaseAddr + i));

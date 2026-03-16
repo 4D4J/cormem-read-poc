@@ -117,16 +117,15 @@ bool CorDrv::FreeBuffer(uint64_t UserAddress) {
 }
 
 uint64_t CorDrv::MapBuffer(uint64_t Address, uint64_t Size, uint64_t Param) {
-    SYSTEM_INFO si = {}; GetSystemInfo(&si);
-    Size += Address & (si.dwPageSize - 1);
     CORMEM_MAP_BUFFER_IN in = { Address, Size, Param };
     uint64_t out = 0;
     SendIoctl(IOCTL_CORMEM_MAP_BUFFER, &in, sizeof(in), &out, sizeof(out));
     return out;
 }
 
-bool CorDrv::UnmapBuffer(uint64_t MappedAddress) {
-    return SendIoctl(IOCTL_CORMEM_UNMAP_BUFFER, &MappedAddress, sizeof(MappedAddress), nullptr, 0);
+bool CorDrv::UnmapBuffer(uint64_t MappedAddress, uint64_t Size) {
+    CORMEM_UNMAP_BUFFER_IN in = { MappedAddress, Size };
+    return SendIoctl(IOCTL_CORMEM_UNMAP_BUFFER, &in, sizeof(in), nullptr, 0);
 }
 
 bool CorDrv::AllocPhysMemory(uint64_t P0, uint64_t P1, uint64_t P2, uint64_t P3,
@@ -161,18 +160,18 @@ uint64_t CorDrv::MapUserToKernel(uint64_t UA) const {
 }
 
 bool CorDrv::ReadPhysicalMemory(uint64_t PhysicalAddress, void* Buffer, size_t Size) {
-    uint64_t mapped = MapBuffer(PhysicalAddress, Size, 0);
+    uint64_t mapped = MapBuffer(PhysicalAddress, Size, 1); // 1 = MmCached
     if (!mapped) return false;
     memcpy(Buffer, reinterpret_cast<void*>(mapped), Size);
-    UnmapBuffer(mapped);
+    UnmapBuffer(mapped, Size);
     return true;
 }
 
 bool CorDrv::WritePhysicalMemory(uint64_t PhysicalAddress, const void* Buffer, size_t Size) {
-    uint64_t mapped = MapBuffer(PhysicalAddress, Size, 0);
+    uint64_t mapped = MapBuffer(PhysicalAddress, Size, 1); // 1 = MmCached
     if (!mapped) return false;
     memcpy(reinterpret_cast<void*>(mapped), Buffer, Size);
-    UnmapBuffer(mapped);
+    UnmapBuffer(mapped, Size);
     return true;
 }
 
@@ -361,12 +360,12 @@ bool CorDrv::ReadProcessMemory(uint64_t DTB, uint64_t VirtualAddress, void* Buff
     while (remaining > 0) {
         uint64_t pageVa = va & ~0xFFFULL;
         bool found = false;
-        uint64_t physPage = g_Cache.Lookup(pageVa, found);
+        uint64_t physPage = g_Cache.Lookup(DTB, pageVa, found);
         
         if (!found) {
             uint64_t phys = TranslateVirtualAddress(DTB, va);
             physPage = phys ? (phys & ~0xFFFULL) : 0;
-            g_Cache.Insert(pageVa, physPage);
+            g_Cache.Insert(DTB, pageVa, physPage);
         }
         
         if (physPage == 0) return false;
@@ -386,12 +385,12 @@ bool CorDrv::WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const voi
     while (remaining > 0) {
         uint64_t pageVa = va & ~0xFFFULL;
         bool found = false;
-        uint64_t physPage = g_Cache.Lookup(pageVa, found);
+        uint64_t physPage = g_Cache.Lookup(DTB, pageVa, found);
         
         if (!found) {
             uint64_t phys = TranslateVirtualAddress(DTB, va);
             physPage = phys ? (phys & ~0xFFFULL) : 0;
-            g_Cache.Insert(pageVa, physPage);
+            g_Cache.Insert(DTB, pageVa, physPage);
         }
         
         if (physPage == 0) return false;
