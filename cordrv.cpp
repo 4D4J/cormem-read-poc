@@ -250,7 +250,7 @@ uint64_t CorDrv::GetSystemEprocessVA() {
     void* buffer = malloc(1);
 
     while (NtQuerySystemInformation(SystemExtendedHandleInformation, buffer, bufferLength, &returnSize) != 0) {
-        bufferLength = returnSize;
+        bufferLength = returnSize + 8192; 
         free(buffer);
         buffer = malloc(bufferLength);
         if (!buffer) return 0;

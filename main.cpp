@@ -173,13 +173,14 @@ int main(int argc, char* argv[]) {
     if (!sysDTB) { printf("[-] Failed to find system DTB.\n"); Pause(); return 1; }
     printf("[+] System DTB: 0x%llX\n\n", (unsigned long long)sysDTB);
 
-    //  DKOM hide 
+    //  DKOM hide (DISABLED - Causes PatchGuard BSOD)
     if (doHide) {
-        printf("[*] Hiding CORMEM from PsLoadedModuleList...\n");
-        if (drv.HideDriver(L"CORMEM.sys"))
-            printf("[+] Driver hidden.\n\n");
-        else
-            printf("[-] HideDriver failed.\n\n");
+        printf("[*] Hiding CORMEM from PsLoadedModuleList is DISABLED (prevents KPP BSOD).\n");
+        // if (drv.HideDriver(L"CORMEM.sys"))
+        //     printf("[+] Driver hidden.\n\n");
+        // else
+        //     printf("[-] HideDriver failed.\n\n");
+        printf("[+] Proceeding without hiding.\n\n");
     }
 
     //  Find process DTB 
