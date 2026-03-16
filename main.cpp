@@ -3,7 +3,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <TlHelp32.h>
-#include "dayz_reader.hpp"
+#include <./StackSpoofer/spoofer.cpp>
+// #include "dayz_reader.hpp" // Disable Dayz usage for github push
 
 //  Process lookup 
 
@@ -195,7 +196,7 @@ int main(int argc, char* argv[]) {
     //  Run DayZ Reader if process name match 
     if (strstr(procName, "DayZ") != nullptr) {
         printf("[*] DayZ process detected matching '%s'!\n", procName);
-        RunDayZReader(drv, procDTB, targetVA);
+        //RunDayZReader(drv, procDTB, targetVA);  // Disable Dayz usage for github push 
         Pause();
         return 0; // Exit after doing DayZ specific logic
     }

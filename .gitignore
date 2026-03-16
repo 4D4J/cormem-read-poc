@@ -29,3 +29,7 @@ __pycache__/
 
 dayz_reader.cpp
 dayz_reader.hpp
+
+StackSpoofer/
+
+

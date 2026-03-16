@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <psapi.h>
+#include "tlb_cache.hpp"
 #pragma comment(lib, "psapi.lib")
 
 CorDrv::~CorDrv() { Close(); }
@@ -351,8 +352,6 @@ uint64_t CorDrv::FindProcessDTB(DWORD Pid) {
     return 0;
 }
 
-#include "tlb_cache.hpp"
-
 bool CorDrv::ReadProcessMemory(uint64_t DTB, uint64_t VirtualAddress, void* Buffer, size_t Size) {
     uint8_t* dst = static_cast<uint8_t*>(Buffer);
     size_t remaining = Size;
@@ -403,7 +402,7 @@ bool CorDrv::WriteProcessMemory(uint64_t DTB, uint64_t VirtualAddress, const voi
     return true;
 }
 
-// ---- DKOM: Driver hiding ----
+// DKOM: Driver hiding 
 
 static uint32_t PeRvaToFileOffset(IMAGE_NT_HEADERS64* nt, uint32_t rva) {
     PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
