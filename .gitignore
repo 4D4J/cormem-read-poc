@@ -27,5 +27,5 @@ install_manifest.txt
 __pycache__/
 *.pyc
 
-.dayz_reader.cpp
-.dayz_reader.hpp
+dayz_reader.cpp
+dayz_reader.hpp

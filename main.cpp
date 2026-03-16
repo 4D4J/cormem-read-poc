@@ -5,7 +5,7 @@
 #include <TlHelp32.h>
 #include "dayz_reader.hpp"
 
-// ---- Process lookup ------------------------------------------------
+//  Process lookup 
 
 static bool FindProcessByName(const char* ProcName, DWORD* OutPid, uint64_t* OutBase) {
     *OutPid = 0;
@@ -48,7 +48,7 @@ static bool FindProcessByName(const char* ProcName, DWORD* OutPid, uint64_t* Out
     return true;
 }
 
-// ---- Hex dump ------------------------------------------------------
+//  Hex dump 
 
 static void HexDump(const uint8_t* Data, size_t Size, uint64_t BaseAddr = 0) {
     for (size_t i = 0; i < Size; i++) {
@@ -59,7 +59,7 @@ static void HexDump(const uint8_t* Data, size_t Size, uint64_t BaseAddr = 0) {
     if (Size % 16 != 0) printf("\n");
 }
 
-// ---- Helpers -------------------------------------------------------
+//  Helpers 
 
 static void Pause() { printf("\nAppuyez sur une touche pour quitter...\n"); getchar(); }
 
@@ -75,7 +75,7 @@ static void PrintUsage(const char* argv0) {
     printf("  Run with no arguments for interactive mode.\n");
 }
 
-// ---- Entry point ---------------------------------------------------
+//  Entry point 
 
 int main(int argc, char* argv[]) {
     DWORD    targetPid  = 0;
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
     bool     doHide     = false;
     char     procName[MAX_PATH] = {};
 
-    // ---- Parse arguments ----
+    //  Parse arguments 
     if (argc == 1) {
         // Interactive mode
         printf("=== cormem-read interactive ===\n\n");
@@ -137,7 +137,7 @@ int main(int argc, char* argv[]) {
 
     if (dumpSize == 0 || dumpSize > 0x100000) dumpSize = 256;
 
-    // ---- Resolve process name if needed ----
+    //  Resolve process name if needed 
     if (procName[0] != 0) {
         printf("[*] Looking for process: %s\n", procName);
         if (!FindProcessByName(procName, &targetPid, &targetVA)) {
@@ -150,9 +150,6 @@ int main(int argc, char* argv[]) {
 
 
     if (targetPid == 0) { printf("[-] Invalid PID.\n"); Pause(); return 1; }
-    // En mode interactif classique, targetVA vient de la base address, 
-    // s'il est à 0 c'est souvent parce que le module principal n'a pas pu être lu. 
-    // On met un warning plutôt qu'un blocage dur car le jeu est 64bit.
     if (targetVA  == 0) { 
         printf("[-] Warning: Base address is 0x0. Make sure you are running as Admin.\n"); 
     }
@@ -161,7 +158,7 @@ int main(int argc, char* argv[]) {
     printf("[*] Target address : 0x%llX\n", (unsigned long long)targetVA);
     printf("[*] Dump size      : %zu bytes\n\n", dumpSize);
 
-    // ---- Init driver ----
+    //  Init driver 
     CorDrv drv;
     printf("[*] Initializing CorDrv...\n");
     if (!drv.Initialize()) {
@@ -170,13 +167,13 @@ int main(int argc, char* argv[]) {
     }
     printf("[+] Driver initialized.\n\n");
 
-    // ---- Find system DTB ----
+    //  Find system DTB 
     printf("[*] Finding system DTB...\n");
     uint64_t sysDTB = drv.FindSystemDTB();
     if (!sysDTB) { printf("[-] Failed to find system DTB.\n"); Pause(); return 1; }
     printf("[+] System DTB: 0x%llX\n\n", (unsigned long long)sysDTB);
 
-    // ---- DKOM hide ----
+    //  DKOM hide 
     if (doHide) {
         printf("[*] Hiding CORMEM from PsLoadedModuleList...\n");
         if (drv.HideDriver(L"CORMEM.sys"))
@@ -185,18 +182,18 @@ int main(int argc, char* argv[]) {
             printf("[-] HideDriver failed.\n\n");
     }
 
-    // ---- Find process DTB ----
+    //  Find process DTB 
     printf("[*] Searching EPROCESS list for PID %u...\n", targetPid);
     uint64_t procDTB = drv.FindProcessDTB(targetPid);
     if (!procDTB) { printf("[-] Failed to find DTB for PID %u.\n", targetPid); Pause(); return 1; }
     printf("[+] Process DTB: 0x%llX\n\n", (unsigned long long)procDTB);
 
-    // ---- Translate VA ----
+    //  Translate VA 
     uint64_t phys = drv.TranslateVirtualAddress(procDTB, targetVA);
     if (!phys) { printf("[-] Page table walk failed for 0x%llX.\n", (unsigned long long)targetVA); Pause(); return 1; }
     printf("[+] VA 0x%llX -> PA 0x%llX\n\n", (unsigned long long)targetVA, (unsigned long long)phys);
 
-    // ---- Run DayZ Reader if process name match ----
+    //  Run DayZ Reader if process name match 
     if (strstr(procName, "DayZ") != nullptr) {
         printf("[*] DayZ process detected matching '%s'!\n", procName);
         RunDayZReader(drv, procDTB, targetVA);
@@ -204,7 +201,7 @@ int main(int argc, char* argv[]) {
         return 0; // Exit after doing DayZ specific logic
     }
 
-    // ---- Read & dump ----
+    //  Read & dump 
     uint8_t* buf = new uint8_t[dumpSize]();
     if (!drv.ReadProcessMemory(procDTB, targetVA, buf, dumpSize)) {
         printf("[-] ReadProcessMemory failed.\n");

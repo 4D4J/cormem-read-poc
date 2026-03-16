@@ -1,4 +1,5 @@
 #include "cordrv.hpp"
+#include "batched_read.hpp"
 
 extern "C" {
 
@@ -32,7 +33,6 @@ __declspec(dllexport) bool CorDrv_WriteProcessMemory(void* drv, uint64_t dtb, ui
     return static_cast<CorDrv*>(drv)->WriteProcessMemory(dtb, virtualAddress, buffer, size);
 }
 
-#include "batched_read.hpp"
 __declspec(dllexport) void CorDrv_ReadProcessMemoryBatched(void* drv, uint64_t dtb, BatchedReadRequest* requests, size_t count) {
     if (!drv || !requests || count == 0) return;
     CorDrv* cdrv = static_cast<CorDrv*>(drv);
