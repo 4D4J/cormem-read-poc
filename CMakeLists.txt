@@ -17,6 +17,13 @@ target_link_libraries(cordrv PRIVATE
     psapi
 )
 
+# Executable PoC
+add_executable(cormem-read-poc
+    main.cpp
+    cordrv.cpp
+)
+target_link_libraries(cormem-read-poc PRIVATE ntdll psapi)
+
 # Warnings utiles
 target_compile_options(cordrv PRIVATE
     /W3

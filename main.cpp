@@ -3,8 +3,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <TlHelp32.h>
-#include <./StackSpoofer/spoofer.cpp>
-// #include "dayz_reader.hpp" // Disable Dayz usage for github push
 
 //  Process lookup 
 
@@ -67,11 +65,10 @@ static void PrintUsage(const char* argv0) {
     printf("Usage:\n");
     printf("  %s <process.exe> [size] [--hide]       auto-mode\n", argv0);
     printf("  %s <pid> <address> [size] [--hide]     manual mode\n\n", argv0);
-    printf("  process.exe  : name of the target process (e.g. DayZ_x64.exe)\n");
+    printf("  process.exe  : name of the target process\n");
     printf("  pid          : process ID (decimal)\n");
     printf("  address      : virtual address (hex, e.g. 0x7FF700000000)\n");
     printf("  size         : bytes to dump (default 256, max 1048576)\n");
-    printf("  --hide       : unlink CORMEM from PsLoadedModuleList (DKOM)\n\n");
     printf("  Run with no arguments for interactive mode.\n");
 }
 
@@ -97,11 +94,6 @@ int main(int argc, char* argv[]) {
         fgets(sizeStr, sizeof(sizeStr), stdin);
         if (sizeStr[0] != '\n' && sizeStr[0] != '\0')
             dumpSize = (size_t)strtoull(sizeStr, nullptr, 10);
-
-        char hideStr[8] = {};
-        printf("Hide driver from PsLoadedModuleList? [y/N]: ");
-        fgets(hideStr, sizeof(hideStr), stdin);
-        doHide = (hideStr[0] == 'y' || hideStr[0] == 'Y');
         printf("\n");
     }
     else {
@@ -176,10 +168,6 @@ int main(int argc, char* argv[]) {
     //  DKOM hide (DISABLED - Causes PatchGuard BSOD)
     if (doHide) {
         printf("[*] Hiding CORMEM from PsLoadedModuleList is DISABLED (prevents KPP BSOD).\n");
-        // if (drv.HideDriver(L"CORMEM.sys"))
-        //     printf("[+] Driver hidden.\n\n");
-        // else
-        //     printf("[-] HideDriver failed.\n\n");
         printf("[+] Proceeding without hiding.\n\n");
     }
 
@@ -193,14 +181,6 @@ int main(int argc, char* argv[]) {
     uint64_t phys = drv.TranslateVirtualAddress(procDTB, targetVA);
     if (!phys) { printf("[-] Page table walk failed for 0x%llX.\n", (unsigned long long)targetVA); Pause(); return 1; }
     printf("[+] VA 0x%llX -> PA 0x%llX\n\n", (unsigned long long)targetVA, (unsigned long long)phys);
-
-    //  Run DayZ Reader if process name match 
-    if (strstr(procName, "DayZ") != nullptr) {
-        printf("[*] DayZ process detected matching '%s'!\n", procName);
-        //RunDayZReader(drv, procDTB, targetVA);  // Disable Dayz usage for github push 
-        Pause();
-        return 0; // Exit after doing DayZ specific logic
-    }
 
     //  Read & dump 
     uint8_t* buf = new uint8_t[dumpSize]();
