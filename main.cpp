@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
     //  Parse arguments 
     if (argc == 1) {
         // Interactive mode
-        printf("=== cormem-read interactive ===\n\n");
+        printf("cormem-read interactive\n\n");
         printf("Process name: ");
         fgets(procName, sizeof(procName), stdin);
         procName[strcspn(procName, "\n")] = 0;

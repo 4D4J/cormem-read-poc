@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
-# Executable PoC
+# Executable PoCs
 add_executable(cormem-read-poc
     main.cpp
     cordrv.cpp
