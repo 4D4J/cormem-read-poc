@@ -1,6 +1,6 @@
 # cordrv_exploit
 
-Usermode tool that reads and writes arbitrary process memory through the Corsair CORMEM kernel driver, bypassing Win32 API monitoring entirely.
+Usermode tool that reads and writes arbitrary process memory through the CORMEM kernel driver, bypassing Win32 API monitoring entirely.
 
 ![poc](poc.png)
 
@@ -9,7 +9,7 @@ Memory is accessed via physical address translation (page table walk) rather tha
 ## Requirements
 
 - Windows x64
-- CORMEM.SYS loaded (comes with Corsair iCUE 3.x / Corsair Link 4)
+- CORMEM.SYS loaded
 - Administrator privileges
 - Visual Studio 2022 + CMake 3.20+
 
@@ -22,7 +22,7 @@ cmake --build build --config Release
 
 ## Loading the driver
 
-If CORMEM.SYS is not already loaded by iCUE, load it manually as administrator:
+If CORMEM.SYS is not already loaded, load it manually as administrator:
 
 ```powershell
 sc.exe create CORMEM binPath= "C:\path\to\CORMEM.SYS" type= kernel start= demand
