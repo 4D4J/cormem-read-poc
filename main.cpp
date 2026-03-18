@@ -99,10 +99,7 @@ int main(int argc, char* argv[]) {
     else {
         // Scan args
         for (int i = 1; i < argc; i++) {
-            if (_stricmp(argv[i], "--hide") == 0) {
-                doHide = true;
-            }
-            else if (strncmp(argv[i], "0x", 2) == 0 || strncmp(argv[i], "0X", 2) == 0) {
+            if (strncmp(argv[i], "0x", 2) == 0 || strncmp(argv[i], "0X", 2) == 0) {
                 // Hex address → manual mode
                 targetVA = strtoull(argv[i], nullptr, 16);
             }
