@@ -13,10 +13,9 @@ Memory is accessed via physical address translation (page table walk) rather tha
 
 ## Requirements
 
-- Windows x64
+- Windows 10/11
 - CORMEM.SYS loaded
-- Administrator privileges
-- Visual Studio 2022 + CMake 3.20+
+- Visual Studio 2022/2026 + CMake 3.20+
 
 ## Build
 
