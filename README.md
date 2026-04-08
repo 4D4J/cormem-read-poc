@@ -1,3 +1,8 @@
+**DISCLAIMER**:
+> This project is for educational and security research purposes only. 
+> Use only on systems you own or have explicit permission to test. 
+> Unauthorized use may be illegal in your jurisdiction.
+
 # cordrv_exploit
 
 Usermode tool that reads and writes arbitrary process memory through the CORMEM kernel driver, bypassing Win32 API monitoring entirely.
