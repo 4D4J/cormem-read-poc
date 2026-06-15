@@ -50,9 +50,9 @@
 
 namespace EProcess {
     constexpr uint64_t DirectoryTableBase = 0x028;
-    constexpr uint64_t UniqueProcessId = 0x440;
-    constexpr uint64_t ActiveProcessLinks = 0x448;
-    constexpr uint64_t ImageFileName = 0x5A8;
+    constexpr uint64_t UniqueProcessId = 0x1D0; // Windows 11 25H2 build 26200
+    constexpr uint64_t ActiveProcessLinks = 0x1D8; // Windows 11 25H2 build 26200
+    constexpr uint64_t ImageFileName = 0x5E8; // Windows 11 25H2 build 26200
 }
 
 // Offsets within kernel LDR_DATA_TABLE_ENTRY (x64, Windows 10/11)
@@ -68,8 +68,8 @@ namespace LdrEntry {
 struct SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX
 {
     PVOID Object;
-    ULONG UniqueProcessId;
-    ULONG HandleValue;
+    ULONG_PTR UniqueProcessId;
+    ULONG_PTR HandleValue;
     ULONG GrantedAccess;
     USHORT CreatorBackTraceIndex;
     USHORT ObjectTypeIndex;
@@ -78,8 +78,8 @@ struct SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX
 };
 struct SYSTEM_HANDLE_INFORMATION_EX
 {
-    ULONG NumberOfHandles;
-    ULONG Reserved;
+    ULONG_PTR NumberOfHandles;
+    ULONG_PTR Reserved;
     SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX Handles[1];
 };
 
@@ -222,7 +222,7 @@ public:
     uint64_t FindProcessDTB(DWORD Pid);
     uint64_t TranslateVirtualAddress(uint64_t DTB, uint64_t VirtualAddress);
 
-    static uint64_t GetSystemEprocessVA();
+    uint64_t GetSystemEprocessVA();
 
     bool HideDriver(const wchar_t* DriverBaseName);
     bool RestoreDriver();
@@ -252,10 +252,15 @@ private:
     static uint64_t GetNtoskrnlBase(char* OutName = nullptr, size_t NameSize = 0);
     static uint64_t ResolvePsLoadedModuleList(uint64_t NtBase, const char* NtName);
 
+    // Physical-memory-only methods 
+    uint64_t FindNtoskrnlBaseViaPhys();
+    uint64_t ResolveKernelExportViaPhys(uint64_t NtBaseVA, const char* ExportName);
+
     HANDLE m_Device = INVALID_HANDLE_VALUE;
     uint32_t m_PoolBlockCount = 0;
     PoolBlock m_PoolBlocks[CORMEM_MAX_POOL_BLOCKS] = {};
     uint64_t m_SystemDTB = 0;
+    uint64_t m_KernelEntryVA = 0; // kernel entry point VA from low stub
     // HideDriver state — used by RestoreDriver
     uint64_t m_HiddenEntryVA    = 0; // VA of CORMEM LDR_DATA_TABLE_ENTRY in kernel
     uint64_t m_HiddenEntryFlink = 0; // original Flink saved before unlinking
