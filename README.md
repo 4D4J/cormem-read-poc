@@ -3,9 +3,16 @@
 > Use only on systems you own or have explicit permission to test. 
 > Unauthorized use may be illegal in your jurisdiction.
 
-# cordrv_exploit
+# cordrv_exploit — CVE-2026-38194
 
-Usermode tool that reads and writes arbitrary process memory through the CORMEM kernel driver, bypassing Win32 API monitoring entirely.
+## Vulnerability
+
+This tool demonstrates CVE-2026-38194, a vulnerability in
+Teledyne Digital Imaging Sapera Memory Manager (v9.0.0.0 and below).
+
+The `CORMEM.SYS` kernel driver exposes IOCTLs without any access control checks,
+allowing a standard unprivileged user to read and write arbitrary process memory
+directly through the kernel — bypassing Win32 API monitoring entirely.
 
 ![poc](poc.png)
 
